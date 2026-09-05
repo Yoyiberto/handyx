@@ -82,48 +82,76 @@ impl std::fmt::Display for ShortcutMode {
     }
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct Secrets {
+    #[serde(default)]
+    pub groq_api_key: String,
+    #[serde(default)]
+    pub openrouter_api_key: String,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AppConfig {
+    #[serde(default)]
     pub engine: EngineType,
+    #[serde(default)]
     pub groq_api_key: String,
+    #[serde(default = "default_groq_model")]
     pub groq_model: String,
+    #[serde(default = "default_shortcut")]
     pub shortcut: String,
+    #[serde(default)]
     pub shortcut_mode: ShortcutMode,
+    #[serde(default = "default_paste_method")]
     pub paste_method: String,
+    #[serde(default = "default_sample_rate")]
     pub audio_sample_rate: u32,
+    #[serde(default = "default_true")]
     pub auto_paste: bool,
+    #[serde(default = "default_paste_delay")]
     pub paste_delay_ms: u64,
 
     // AI Polish settings (OpenRouter)
+    #[serde(default = "default_true")]
     pub enable_ai_polish: bool,
+    #[serde(default)]
     pub openrouter_api_key: String,
+    #[serde(default = "default_openrouter_model")]
     pub openrouter_model: String,
 
     // History and recording storage
+    #[serde(default = "default_true")]
     pub save_history: bool,
+    #[serde(default = "default_true")]
     pub save_audio: bool,
+    #[serde(default)]
     pub history_dir: Option<String>,
 }
 
+fn default_groq_model() -> String { "whisper-large-v3-turbo".to_string() }
+fn default_shortcut() -> String { "<Control><Shift>space".to_string() }
+fn default_paste_method() -> String { "auto".to_string() }
+fn default_sample_rate() -> u32 { 16000 }
+fn default_paste_delay() -> u64 { 60 }
+fn default_openrouter_model() -> String { "openai/gpt-5.6-luna".to_string() }
+fn default_true() -> bool { true }
+
 impl Default for AppConfig {
     fn default() -> Self {
-        let env_groq = std::env::var("GROQ_API_KEY").unwrap_or_default();
-        let env_openrouter = std::env::var("OPENROUTER_API_KEY").unwrap_or_default();
-
         Self {
             engine: EngineType::GroqTurbo,
-            groq_api_key: env_groq,
-            groq_model: "whisper-large-v3-turbo".to_string(),
-            shortcut: "<Control><Shift>space".to_string(),
+            groq_api_key: String::new(),
+            groq_model: default_groq_model(),
+            shortcut: default_shortcut(),
             shortcut_mode: ShortcutMode::Hybrid,
-            paste_method: "auto".to_string(),
-            audio_sample_rate: 16000,
+            paste_method: default_paste_method(),
+            audio_sample_rate: default_sample_rate(),
             auto_paste: true,
-            paste_delay_ms: 60,
+            paste_delay_ms: default_paste_delay(),
 
             enable_ai_polish: true,
-            openrouter_api_key: env_openrouter,
-            openrouter_model: "openai/gpt-5.6-luna".to_string(),
+            openrouter_api_key: String::new(),
+            openrouter_model: default_openrouter_model(),
 
             save_history: true,
             save_audio: true,
@@ -133,42 +161,83 @@ impl Default for AppConfig {
 }
 
 impl AppConfig {
-    pub fn config_path() -> PathBuf {
+    pub fn base_dir() -> PathBuf {
         if let Some(proj_dirs) = ProjectDirs::from("com", "hadyx", "hadyx") {
             let dir = proj_dirs.config_dir();
             let _ = fs::create_dir_all(dir);
-            dir.join("config.toml")
+            dir.to_path_buf()
         } else {
             let home = std::env::var("HOME").unwrap_or_else(|_| ".".into());
             let dir = PathBuf::from(format!("{}/.config/hadyx", home));
             let _ = fs::create_dir_all(&dir);
-            dir.join("config.toml")
+            dir
         }
+    }
+
+    pub fn config_path() -> PathBuf {
+        Self::base_dir().join("config.toml")
+    }
+
+    pub fn secrets_path() -> PathBuf {
+        Self::base_dir().join("secrets.toml")
+    }
+
+    pub fn load_secrets() -> Secrets {
+        let path = Self::secrets_path();
+        if path.exists() {
+            if let Ok(content) = fs::read_to_string(&path) {
+                if let Ok(sec) = toml::from_str::<Secrets>(&content) {
+                    return sec;
+                }
+            }
+        }
+        Secrets::default()
+    }
+
+    pub fn save_secrets(secrets: &Secrets) -> Result<(), Box<dyn std::error::Error>> {
+        let path = Self::secrets_path();
+        if let Some(parent) = path.parent() {
+            fs::create_dir_all(parent)?;
+        }
+        let content = toml::to_string_pretty(secrets)?;
+        fs::write(path, content)?;
+        Ok(())
     }
 
     pub fn load() -> Self {
         let path = Self::config_path();
-        if path.exists() {
+        let mut cfg = if path.exists() {
             if let Ok(content) = fs::read_to_string(&path) {
-                if let Ok(mut cfg) = toml::from_str::<AppConfig>(&content) {
-                    if cfg.groq_api_key.is_empty() {
-                        if let Ok(env_key) = std::env::var("GROQ_API_KEY") {
-                            cfg.groq_api_key = env_key;
-                        }
-                    }
-                    if cfg.openrouter_api_key.is_empty() {
-                        if let Ok(env_key) = std::env::var("OPENROUTER_API_KEY") {
-                            cfg.openrouter_api_key = env_key;
-                        }
-                    }
-                    return cfg;
-                }
+                toml::from_str::<AppConfig>(&content).unwrap_or_default()
+            } else {
+                AppConfig::default()
+            }
+        } else {
+            AppConfig::default()
+        };
+
+        // Load permanent secrets
+        let secrets = Self::load_secrets();
+
+        // 1. Groq API Key resolution
+        if cfg.groq_api_key.trim().is_empty() {
+            if !secrets.groq_api_key.trim().is_empty() {
+                cfg.groq_api_key = secrets.groq_api_key.clone();
+            } else if let Ok(env_key) = std::env::var("GROQ_API_KEY") {
+                cfg.groq_api_key = env_key;
             }
         }
 
-        let default_cfg = Self::default();
-        let _ = default_cfg.save();
-        default_cfg
+        // 2. OpenRouter API Key resolution
+        if cfg.openrouter_api_key.trim().is_empty() {
+            if !secrets.openrouter_api_key.trim().is_empty() {
+                cfg.openrouter_api_key = secrets.openrouter_api_key.clone();
+            } else if let Ok(env_key) = std::env::var("OPENROUTER_API_KEY") {
+                cfg.openrouter_api_key = env_key;
+            }
+        }
+
+        cfg
     }
 
     pub fn save(&self) -> Result<(), Box<dyn std::error::Error>> {
@@ -176,6 +245,17 @@ impl AppConfig {
         if let Some(parent) = path.parent() {
             fs::create_dir_all(parent)?;
         }
+
+        // Also save/update persistent secrets
+        let mut secrets = Self::load_secrets();
+        if !self.groq_api_key.trim().is_empty() {
+            secrets.groq_api_key = self.groq_api_key.clone();
+        }
+        if !self.openrouter_api_key.trim().is_empty() {
+            secrets.openrouter_api_key = self.openrouter_api_key.clone();
+        }
+        let _ = Self::save_secrets(&secrets);
+
         let toml_str = toml::to_string_pretty(self)?;
         fs::write(path, toml_str)?;
         Ok(())
