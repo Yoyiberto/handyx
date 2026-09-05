@@ -1,9 +1,9 @@
 [package]
 name = "hadyx"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
 authors = ["HadyX Developers"]
-description = "Minimalist, ultra-fast speech-to-text with Moonshine Base and Groq Whisper Turbo for Wayland / Ubuntu"
+description = "Minimalist, ultra-fast speech-to-text with Moonshine Base, Groq Whisper Turbo & OpenRouter AI Polish"
 
 [dependencies]
 cpal = "0.18"
@@ -21,6 +21,7 @@ cairo-rs = "0.18"
 directories = "5.0"
 async-trait = "0.1"
 base64 = "0.22"
+enigo = { version = "0.2", default-features = false, features = ["x11rb"] }
+chrono = { version = "0.4", features = ["serde"] }
 log = "0.4"
 env_logger = "0.11"
-enigo = { version = "0.2", default-features = false, features = ["x11rb"] }

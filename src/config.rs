@@ -93,11 +93,22 @@ pub struct AppConfig {
     pub audio_sample_rate: u32,
     pub auto_paste: bool,
     pub paste_delay_ms: u64,
+
+    // AI Polish settings (OpenRouter)
+    pub enable_ai_polish: bool,
+    pub openrouter_api_key: String,
+    pub openrouter_model: String,
+
+    // History and recording storage
+    pub save_history: bool,
+    pub save_audio: bool,
+    pub history_dir: Option<String>,
 }
 
 impl Default for AppConfig {
     fn default() -> Self {
         let env_groq = std::env::var("GROQ_API_KEY").unwrap_or_default();
+        let env_openrouter = std::env::var("OPENROUTER_API_KEY").unwrap_or_default();
 
         Self {
             engine: EngineType::GroqTurbo,
@@ -109,6 +120,14 @@ impl Default for AppConfig {
             audio_sample_rate: 16000,
             auto_paste: true,
             paste_delay_ms: 60,
+
+            enable_ai_polish: true,
+            openrouter_api_key: env_openrouter,
+            openrouter_model: "openai/gpt-5.6-luna".to_string(),
+
+            save_history: true,
+            save_audio: true,
+            history_dir: None,
         }
     }
 }
@@ -135,6 +154,11 @@ impl AppConfig {
                     if cfg.groq_api_key.is_empty() {
                         if let Ok(env_key) = std::env::var("GROQ_API_KEY") {
                             cfg.groq_api_key = env_key;
+                        }
+                    }
+                    if cfg.openrouter_api_key.is_empty() {
+                        if let Ok(env_key) = std::env::var("OPENROUTER_API_KEY") {
+                            cfg.openrouter_api_key = env_key;
                         }
                     }
                     return cfg;

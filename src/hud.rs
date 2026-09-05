@@ -10,6 +10,7 @@ pub enum HudState {
     Hidden,
     Recording { engine_name: String, level: f32 },
     Transcribing { engine_name: String },
+    Polishing { model_name: String },
     Success { text: String },
     Error { message: String },
 }
@@ -54,7 +55,7 @@ impl HudController {
             window.set_resizable(false);
             window.set_position(WindowPosition::Center);
 
-            // CRITICAL: Prevent HUD from stealing keyboard focus from target applications!
+            // CRITICAL: Prevent HUD from stealing keyboard focus!
             window.set_accept_focus(false);
             window.set_focus_on_map(false);
             window.set_type_hint(gdk::WindowTypeHint::Notification);
@@ -90,6 +91,11 @@ impl HudController {
                     font-size: 16px;
                     font-weight: bold;
                 }
+                .hud-icon-polish {
+                    color: #e056fd;
+                    font-size: 16px;
+                    font-weight: bold;
+                }
                 .hud-icon-success {
                     color: #2ed573;
                     font-size: 16px;
@@ -110,6 +116,15 @@ impl HudController {
                 .hud-badge {
                     color: #70a1ff;
                     background-color: rgba(112, 161, 255, 0.15);
+                    border-radius: 12px;
+                    padding: 2px 8px;
+                    font-size: 11px;
+                    font-weight: 600;
+                    margin-left: 10px;
+                }
+                .hud-badge-polish {
+                    color: #e056fd;
+                    background-color: rgba(224, 86, 253, 0.18);
                     border-radius: 12px;
                     padding: 2px 8px;
                     font-size: 11px;
@@ -188,9 +203,13 @@ impl HudController {
                             };
                             icon.set_text(&format!("● {}", bars));
                             icon.style_context().remove_class("hud-icon-trans");
+                            icon.style_context().remove_class("hud-icon-polish");
                             icon.style_context().remove_class("hud-icon-success");
                             icon.style_context().remove_class("hud-icon-err");
                             icon.style_context().add_class("hud-icon-rec");
+
+                            badge.style_context().remove_class("hud-badge-polish");
+                            badge.style_context().add_class("hud-badge");
 
                             status.set_text("Escuchando...");
                             badge.set_text(&engine_name);
@@ -202,12 +221,34 @@ impl HudController {
                         HudState::Transcribing { engine_name } => {
                             icon.set_text("⚡");
                             icon.style_context().remove_class("hud-icon-rec");
+                            icon.style_context().remove_class("hud-icon-polish");
                             icon.style_context().remove_class("hud-icon-success");
                             icon.style_context().remove_class("hud-icon-err");
                             icon.style_context().add_class("hud-icon-trans");
 
+                            badge.style_context().remove_class("hud-badge-polish");
+                            badge.style_context().add_class("hud-badge");
+
                             status.set_text("Transcribiendo...");
                             badge.set_text(&engine_name);
+
+                            if !win.is_visible() {
+                                win.show_all();
+                            }
+                        }
+                        HudState::Polishing { model_name } => {
+                            icon.set_text("✨");
+                            icon.style_context().remove_class("hud-icon-rec");
+                            icon.style_context().remove_class("hud-icon-trans");
+                            icon.style_context().remove_class("hud-icon-success");
+                            icon.style_context().remove_class("hud-icon-err");
+                            icon.style_context().add_class("hud-icon-polish");
+
+                            badge.style_context().remove_class("hud-badge");
+                            badge.style_context().add_class("hud-badge-polish");
+
+                            status.set_text("Puliendo texto...");
+                            badge.set_text(&model_name);
 
                             if !win.is_visible() {
                                 win.show_all();
@@ -217,8 +258,12 @@ impl HudController {
                             icon.set_text("✓");
                             icon.style_context().remove_class("hud-icon-rec");
                             icon.style_context().remove_class("hud-icon-trans");
+                            icon.style_context().remove_class("hud-icon-polish");
                             icon.style_context().remove_class("hud-icon-err");
                             icon.style_context().add_class("hud-icon-success");
+
+                            badge.style_context().remove_class("hud-badge-polish");
+                            badge.style_context().add_class("hud-badge");
 
                             let preview = if text.len() > 28 {
                                 format!("{}...", &text[..28])
@@ -238,8 +283,12 @@ impl HudController {
                             icon.set_text("✗");
                             icon.style_context().remove_class("hud-icon-rec");
                             icon.style_context().remove_class("hud-icon-trans");
+                            icon.style_context().remove_class("hud-icon-polish");
                             icon.style_context().remove_class("hud-icon-success");
                             icon.style_context().add_class("hud-icon-err");
+
+                            badge.style_context().remove_class("hud-badge-polish");
+                            badge.style_context().add_class("hud-badge");
 
                             status.set_text(&message);
                             badge.set_text("Error");
