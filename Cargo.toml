@@ -1,0 +1,26 @@
+[package]
+name = "hadyx"
+version = "0.1.0"
+edition = "2021"
+authors = ["HadyX Developers"]
+description = "Minimalist, ultra-fast speech-to-text with Moonshine Base and Groq Whisper Turbo for Wayland / Ubuntu"
+
+[dependencies]
+cpal = "0.18"
+hound = "3.5"
+tokio = { version = "1", features = ["full"] }
+reqwest = { version = "0.12", features = ["json", "multipart", "rustls-tls"], default-features = false }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+toml = "0.8"
+clap = { version = "4.5", features = ["derive"] }
+gtk = { version = "0.18", features = ["v3_24"] }
+gdk = "0.18"
+glib = "0.18"
+cairo-rs = "0.18"
+directories = "5.0"
+async-trait = "0.1"
+base64 = "0.22"
+log = "0.4"
+env_logger = "0.11"
+enigo = { version = "0.2", default-features = false, features = ["x11rb"] }

@@ -1,0 +1,6 @@
+/target/
+/.venv/
+*.sock
+*.wav
+*.log
+.DS_Store

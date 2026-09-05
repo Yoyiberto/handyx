@@ -1,0 +1,13 @@
+[Unit]
+Description=HadyX Minimalist Speech-to-Text Daemon
+After=graphical-session.target
+
+[Service]
+Type=simple
+ExecStart=%h/.local/bin/hadyx daemon
+Restart=on-failure
+RestartSec=2
+Environment=PATH=%h/.local/bin:/usr/local/bin:/usr/bin:/bin
+
+[Install]
+WantedBy=default.target
