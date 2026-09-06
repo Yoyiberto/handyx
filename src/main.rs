@@ -7,6 +7,7 @@ mod ipc;
 mod paste;
 mod polish;
 mod shortcut;
+mod tray;
 
 use audio::AudioRecorder;
 use clap::{Parser, Subcommand};
@@ -17,15 +18,17 @@ use engines::TranscriptionEngine;
 use history::HistoryManager;
 use hud::{HudController, HudState};
 use polish::OpenRouterPolisher;
+use std::fs;
 use std::io::{BufRead, BufReader, Write};
+use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::sync::Mutex;
 
 #[derive(Parser)]
-#[command(name = "hadyx")]
-#[command(about = "Minimalist, ultra-fast speech-to-text with Moonshine Base, Groq Whisper Turbo & OpenRouter AI Polish", long_about = None)]
+#[command(name = "handyx")]
+#[command(about = "Minimalist, ultra-fast speech-to-text with Top Bar Tray Icon, Moonshine Base, Groq Whisper Turbo & OpenRouter AI Polish", long_about = None)]
 struct Cli {
     #[command(subcommand)]
     command: Option<Commands>,
@@ -33,9 +36,9 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Commands {
-    /// Start the background daemon with floating HUD
+    /// Start the background daemon with top bar Tray icon and floating HUD
     Daemon,
-    /// Toggle recording (start/stop) - default for GNOME shortcut
+    /// Toggle recording (start/stop) - default for global shortcut
     Toggle,
     /// Key-down trigger for Push-to-Talk (Hold mode)
     Start,
@@ -64,6 +67,13 @@ enum Commands {
     SetPolishModel {
         /// Model name (e.g. 'openai/gpt-5.6-luna')
         model: String,
+    },
+    /// Configure autostart on system boot/login
+    Autostart {
+        #[arg(long)]
+        enable: bool,
+        #[arg(long)]
+        disable: bool,
     },
     /// View recent transcription history
     History {
@@ -102,6 +112,22 @@ struct AppState {
     history_manager: Arc<HistoryManager>,
     is_busy: Arc<AtomicBool>,
     recording_started_at: Arc<Mutex<Option<Instant>>>,
+    tray_handle: Option<ksni::Handle<tray::HandyXTray>>,
+    tray_recording: Arc<std::sync::Mutex<bool>>,
+    tray_engine: Arc<std::sync::Mutex<String>>,
+    tray_polish: Arc<std::sync::Mutex<bool>>,
+    tray_mode: Arc<std::sync::Mutex<String>>,
+}
+
+impl AppState {
+    fn update_tray(&self) {
+        if let Some(handle) = &self.tray_handle {
+            let handle = handle.clone();
+            tokio::spawn(async move {
+                handle.update(|_| {}).await;
+            });
+        }
+    }
 }
 
 #[tokio::main]
@@ -173,6 +199,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             let _ = ipc::send_command("RELOAD_CONFIG");
             println!("AI Polish model updated to: '{}'", model);
         }
+        Commands::Autostart { enable, disable } => {
+            if enable {
+                setup_autostart(true)?;
+                println!("HandyX autostart enabled (will launch on login in background).");
+            } else if disable {
+                setup_autostart(false)?;
+                println!("HandyX autostart disabled.");
+            } else {
+                let status = is_autostart_enabled();
+                println!("HandyX autostart status: {}", if status { "ENABLED" } else { "DISABLED" });
+                println!("Run with --enable or --disable to change.");
+            }
+        }
         Commands::History { count } => {
             let cfg = AppConfig::load();
             let history_mgr = HistoryManager::new(cfg.history_dir.as_deref());
@@ -233,8 +272,68 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
+fn autostart_desktop_path() -> PathBuf {
+    let home = std::env::var("HOME").unwrap_or_else(|_| ".".into());
+    let dir = PathBuf::from(format!("{}/.config/autostart", home));
+    let _ = fs::create_dir_all(&dir);
+    dir.join("handyx.desktop")
+}
+
+fn is_autostart_enabled() -> bool {
+    autostart_desktop_path().exists()
+}
+
+fn setup_autostart(enable: bool) -> Result<(), Box<dyn std::error::Error>> {
+    let path = autostart_desktop_path();
+    if enable {
+        let handyx_bin = std::env::current_exe()
+            .unwrap_or_else(|_| PathBuf::from("/home/jmendez/.local/bin/handyx"))
+            .to_string_lossy()
+            .to_string();
+
+        let desktop_content = format!(
+            "[Desktop Entry]\n\
+            Type=Application\n\
+            Name=HandyX\n\
+            Comment=HandyX Voice Dictation Daemon\n\
+            Exec={} daemon\n\
+            Icon=audio-input-microphone\n\
+            Terminal=false\n\
+            Categories=Utility;Audio;\n\
+            X-GNOME-Autostart-enabled=true\n",
+            handyx_bin
+        );
+        fs::write(path, desktop_content)?;
+
+        // Also setup systemd user service
+        let home = std::env::var("HOME").unwrap_or_else(|_| ".".into());
+        let sys_dir = PathBuf::from(format!("{}/.config/systemd/user", home));
+        let _ = fs::create_dir_all(&sys_dir);
+        let service_content = format!(
+            "[Unit]\n\
+            Description=HandyX Voice Dictation Daemon\n\
+            After=graphical-session.target\n\n\
+            [Service]\n\
+            Type=simple\n\
+            ExecStart={} daemon\n\
+            Restart=on-failure\n\
+            RestartSec=2\n\
+            Environment=PATH={}/.local/bin:/usr/local/bin:/usr/bin:/bin\n\n\
+            [Install]\n\
+            WantedBy=default.target\n",
+            handyx_bin, home
+        );
+        let _ = fs::write(sys_dir.join("handyx.service"), service_content);
+    } else {
+        if path.exists() {
+            let _ = fs::remove_file(path);
+        }
+    }
+    Ok(())
+}
+
 async fn run_daemon() -> Result<(), Box<dyn std::error::Error>> {
-    println!("=== Starting HadyX Daemon ===");
+    println!("=== Starting HandyX Daemon ===");
     let config = Arc::new(Mutex::new(AppConfig::load()));
     let cfg_guard = config.lock().await;
 
@@ -246,6 +345,7 @@ async fn run_daemon() -> Result<(), Box<dyn std::error::Error>> {
     println!("Config Path: {:?}", AppConfig::config_path());
 
     let _ = shortcut::register_gnome_shortcut(&cfg_guard.shortcut);
+    let _ = setup_autostart(true);
 
     let groq_engine = Arc::new(GroqEngine::new(
         cfg_guard.groq_api_key.clone(),
@@ -255,6 +355,30 @@ async fn run_daemon() -> Result<(), Box<dyn std::error::Error>> {
     let moonshine_es_engine = Arc::new(MoonshineEngine::new("es".to_string()));
     let history_manager = Arc::new(HistoryManager::new(cfg_guard.history_dir.as_deref()));
     let recorder = Arc::new(Mutex::new(AudioRecorder::new(cfg_guard.audio_sample_rate)));
+
+    // Spawn Tray Icon
+    let tray_rec = Arc::new(std::sync::Mutex::new(false));
+    let tray_eng = Arc::new(std::sync::Mutex::new(cfg_guard.engine.to_string()));
+    let tray_pol = Arc::new(std::sync::Mutex::new(cfg_guard.enable_ai_polish));
+    let tray_mod = Arc::new(std::sync::Mutex::new(cfg_guard.shortcut_mode.to_string()));
+
+    let tray_handle = match tray::spawn_tray(
+        tray_rec.clone(),
+        tray_eng.clone(),
+        tray_pol.clone(),
+        tray_mod.clone(),
+    ).await {
+        Ok(handle) => {
+            println!("System tray icon registered successfully in top bar.");
+            Some(handle)
+        }
+        Err(e) => {
+            eprintln!("Notice: System tray icon could not be registered ({}). Continuing in background.", e);
+            None
+        }
+    };
+
+    // Spawn Floating HUD
     let hud = Arc::new(HudController::new());
     hud.start_ui_thread();
 
@@ -270,11 +394,16 @@ async fn run_daemon() -> Result<(), Box<dyn std::error::Error>> {
         history_manager,
         is_busy: Arc::new(AtomicBool::new(false)),
         recording_started_at: Arc::new(Mutex::new(None)),
+        tray_handle,
+        tray_recording: tray_rec,
+        tray_engine: tray_eng,
+        tray_polish: tray_pol,
+        tray_mode: tray_mod,
     });
 
     let listener = ipc::create_listener()?;
     println!("IPC Socket ready at {:?}", ipc::get_socket_path());
-    println!("HadyX is listening for global triggers...");
+    println!("HandyX is running in background with Tray Icon in top bar!");
 
     // Level updater task
     let state_for_level = app_state.clone();
@@ -313,6 +442,10 @@ async fn run_daemon() -> Result<(), Box<dyn std::error::Error>> {
                         let mut line = String::new();
                         if reader.read_line(&mut line).is_ok() {
                             let cmd = line.trim();
+                            if cmd == "QUIT" {
+                                println!("HandyX daemon shutting down by user request.");
+                                std::process::exit(0);
+                            }
                             let response = handle_ipc_command(cmd, &state).await;
                             let _ = writeln!(cloned_stream, "{}", response);
                             let _ = cloned_stream.flush();
@@ -336,6 +469,10 @@ async fn handle_ipc_command(cmd: &str, state: &Arc<AppState>) -> String {
             let mut cfg = state.config.lock().await;
             cfg.engine = engine_type;
             let _ = cfg.save();
+
+            *state.tray_engine.lock().unwrap() = cfg.engine.to_string();
+            state.update_tray();
+
             return format!("Active engine set to: {}", cfg.engine);
         }
     }
@@ -350,12 +487,20 @@ async fn handle_ipc_command(cmd: &str, state: &Arc<AppState>) -> String {
             _ => {}
         }
         let _ = cfg.save();
+
+        *state.tray_mode.lock().unwrap() = cfg.shortcut_mode.to_string();
+        state.update_tray();
+
         return format!("Shortcut mode updated to {}", cfg.shortcut_mode);
     }
 
     if cmd == "RELOAD_CONFIG" {
         let mut cfg = state.config.lock().await;
         *cfg = AppConfig::load();
+        *state.tray_engine.lock().unwrap() = cfg.engine.to_string();
+        *state.tray_polish.lock().unwrap() = cfg.enable_ai_polish;
+        *state.tray_mode.lock().unwrap() = cfg.shortcut_mode.to_string();
+        state.update_tray();
         return "Config reloaded".to_string();
     }
 
@@ -363,7 +508,23 @@ async fn handle_ipc_command(cmd: &str, state: &Arc<AppState>) -> String {
         let mut cfg = state.config.lock().await;
         cfg.enable_ai_polish = !cfg.enable_ai_polish;
         let _ = cfg.save();
+
+        *state.tray_polish.lock().unwrap() = cfg.enable_ai_polish;
+        state.update_tray();
+
         return format!("AI Polish: {}", if cfg.enable_ai_polish { "ENABLED" } else { "DISABLED" });
+    }
+
+    if cmd == "OPEN_HISTORY" {
+        let path = state.history_manager.get_recordings_dir();
+        let _ = std::process::Command::new("xdg-open").arg(path).spawn();
+        return "Opening history folder".to_string();
+    }
+
+    if cmd == "OPEN_CONFIG" {
+        let path = AppConfig::config_path();
+        let _ = std::process::Command::new("xdg-open").arg(path).spawn();
+        return "Opening config file".to_string();
     }
 
     match cmd {
@@ -384,6 +545,10 @@ async fn handle_ipc_command(cmd: &str, state: &Arc<AppState>) -> String {
             let mut cfg = state.config.lock().await;
             cfg.engine = cfg.engine.next();
             let _ = cfg.save();
+
+            *state.tray_engine.lock().unwrap() = cfg.engine.to_string();
+            state.update_tray();
+
             format!("Switched to: {}", cfg.engine)
         }
         "STATUS" => {
@@ -422,6 +587,9 @@ async fn start_recording(state: &Arc<AppState>) -> String {
                 *start_time = Some(Instant::now());
             }
 
+            *state.tray_recording.lock().unwrap() = true;
+            state.update_tray();
+
             let engine_badge = {
                 let cfg = state.config.lock().await;
                 cfg.engine.badge_label().to_string()
@@ -453,6 +621,9 @@ async fn stop_and_transcribe(state: &Arc<AppState>) -> String {
         let mut start_time = state.recording_started_at.lock().await;
         *start_time = None;
     }
+
+    *state.tray_recording.lock().unwrap() = false;
+    state.update_tray();
 
     let (wav_bytes, raw_samples) = {
         let mut rec = state.recorder.lock().await;
@@ -521,7 +692,6 @@ async fn stop_and_transcribe(state: &Arc<AppState>) -> String {
             let mut final_text = raw_text.clone();
             let mut polished_text_opt: Option<String> = None;
 
-            // AI Polishing step via OpenRouter
             if enable_polish && !openrouter_key.trim().is_empty() {
                 let model_short_name = if openrouter_model.contains("luna") {
                     "Luna".to_string()
@@ -550,7 +720,6 @@ async fn stop_and_transcribe(state: &Arc<AppState>) -> String {
                 }
             }
 
-            // Save history & recordings
             if save_hist {
                 let engine_name = format!("{:?}", engine_type);
                 let audio_slice = if save_aud { Some(&wav_bytes[..]) } else { None };

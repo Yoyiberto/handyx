@@ -25,7 +25,15 @@ impl HistoryManager {
             PathBuf::from(dir)
         } else {
             let home = std::env::var("HOME").unwrap_or_else(|_| ".".into());
-            PathBuf::from(format!("{}/.local/share/hadyx", home))
+            let dir = PathBuf::from(format!("{}/.local/share/handyx", home));
+            
+            // Migrate old hadyx data if present
+            let old_dir = PathBuf::from(format!("{}/.local/share/hadyx", home));
+            if old_dir.exists() && !dir.exists() {
+                let _ = fs::rename(&old_dir, &dir);
+            }
+            
+            dir
         };
 
         let recordings_dir = base_dir.join("recordings");
@@ -56,7 +64,6 @@ impl HistoryManager {
         let recordings_dir = self.get_recordings_dir();
         let _ = fs::create_dir_all(&recordings_dir);
 
-        // 1. Save audio file if bytes provided
         let audio_filename = if let Some(bytes) = wav_bytes {
             let file_name = format!("{}.wav", id);
             let wav_path = recordings_dir.join(&file_name);
@@ -76,12 +83,10 @@ impl HistoryManager {
             audio_file: audio_filename,
         };
 
-        // 2. Save individual JSON record in recordings folder
         let json_path = recordings_dir.join(format!("{}.json", id));
         let json_content = serde_json::to_string_pretty(&entry)?;
         fs::write(&json_path, json_content)?;
 
-        // 3. Append to master history.jsonl
         let jsonl_path = self.base_dir.join("history.jsonl");
         let mut file = OpenOptions::new()
             .create(true)

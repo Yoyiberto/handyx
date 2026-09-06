@@ -1,4 +1,3 @@
-use directories::ProjectDirs;
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::PathBuf;
@@ -162,16 +161,22 @@ impl Default for AppConfig {
 
 impl AppConfig {
     pub fn base_dir() -> PathBuf {
-        if let Some(proj_dirs) = ProjectDirs::from("com", "hadyx", "hadyx") {
-            let dir = proj_dirs.config_dir();
-            let _ = fs::create_dir_all(dir);
-            dir.to_path_buf()
-        } else {
-            let home = std::env::var("HOME").unwrap_or_else(|_| ".".into());
-            let dir = PathBuf::from(format!("{}/.config/hadyx", home));
-            let _ = fs::create_dir_all(&dir);
-            dir
+        let home = std::env::var("HOME").unwrap_or_else(|_| ".".into());
+        let dir = PathBuf::from(format!("{}/.config/handyx", home));
+        let _ = fs::create_dir_all(&dir);
+
+        // Migrate old hadyx config if present
+        let old_dir = PathBuf::from(format!("{}/.config/hadyx", home));
+        if old_dir.exists() && !dir.join("config.toml").exists() {
+            if let Ok(old_content) = fs::read_to_string(old_dir.join("config.toml")) {
+                let _ = fs::write(dir.join("config.toml"), old_content);
+            }
+            if let Ok(old_secrets) = fs::read_to_string(old_dir.join("secrets.toml")) {
+                let _ = fs::write(dir.join("secrets.toml"), old_secrets);
+            }
         }
+
+        dir
     }
 
     pub fn config_path() -> PathBuf {
@@ -216,10 +221,8 @@ impl AppConfig {
             AppConfig::default()
         };
 
-        // Load permanent secrets
         let secrets = Self::load_secrets();
 
-        // 1. Groq API Key resolution
         if cfg.groq_api_key.trim().is_empty() {
             if !secrets.groq_api_key.trim().is_empty() {
                 cfg.groq_api_key = secrets.groq_api_key.clone();
@@ -228,7 +231,6 @@ impl AppConfig {
             }
         }
 
-        // 2. OpenRouter API Key resolution
         if cfg.openrouter_api_key.trim().is_empty() {
             if !secrets.openrouter_api_key.trim().is_empty() {
                 cfg.openrouter_api_key = secrets.openrouter_api_key.clone();
@@ -246,7 +248,6 @@ impl AppConfig {
             fs::create_dir_all(parent)?;
         }
 
-        // Also save/update persistent secrets
         let mut secrets = Self::load_secrets();
         if !self.groq_api_key.trim().is_empty() {
             secrets.groq_api_key = self.groq_api_key.clone();

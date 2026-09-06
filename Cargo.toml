@@ -1,9 +1,9 @@
 [package]
-name = "hadyx"
-version = "0.2.0"
+name = "handyx"
+version = "0.3.0"
 edition = "2021"
-authors = ["HadyX Developers"]
-description = "Minimalist, ultra-fast speech-to-text with Moonshine Base, Groq Whisper Turbo & OpenRouter AI Polish"
+authors = ["HandyX Developers"]
+description = "Minimalist, ultra-fast speech-to-text with Tray Icon, Moonshine Base, Groq Whisper Turbo & OpenRouter AI Polish"
 
 [dependencies]
 cpal = "0.18"
@@ -23,5 +23,6 @@ async-trait = "0.1"
 base64 = "0.22"
 enigo = { version = "0.2", default-features = false, features = ["x11rb"] }
 chrono = { version = "0.4", features = ["serde"] }
+ksni = "0.3.6"
 log = "0.4"
 env_logger = "0.11"

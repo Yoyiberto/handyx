@@ -4,19 +4,22 @@ set -e
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 export PATH="$HOME/.cargo/bin:$PATH"
 
-echo "==> Compilando HadyX en modo Release..."
+echo "==> Compilando HandyX en modo Release..."
 cd "$DIR"
 cargo build --release
 
-echo "==> Instalando binario en ~/.local/bin/hadyx..."
+echo "==> Instalando binario en ~/.local/bin/handyx..."
 mkdir -p ~/.local/bin
-cp target/release/hadyx ~/.local/bin/hadyx
-chmod +x ~/.local/bin/hadyx
+pkill -9 handyx 2>/dev/null || true
+rm -f ~/.local/bin/handyx
+cp target/release/handyx ~/.local/bin/handyx
+chmod +x ~/.local/bin/handyx
 
-echo "==> Registrando servicio systemd de usuario..."
-mkdir -p ~/.config/systemd/user/
-cp "$DIR/scripts/hadyx.service" ~/.config/systemd/user/hadyx.service 2>/dev/null || true
+# Symlink hadyx -> handyx for backwards compatibility
+ln -sf ~/.local/bin/handyx ~/.local/bin/hadyx
 
-echo "==> ¡Instalación completada con éxito!"
-echo "Puedes iniciar el daemon ejecutando: hadyx daemon"
-echo "O mediante systemd: systemctl --user enable --now hadyx"
+echo "==> Configurando autostart y servicio en segundo plano..."
+~/.local/bin/handyx autostart --enable
+
+echo "==> ¡Instalación de HandyX completada con éxito!"
+echo "HandyX ahora se inicia automáticamente con el sistema y aparece en la barra superior."

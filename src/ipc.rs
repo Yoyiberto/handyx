@@ -4,16 +4,16 @@ use std::path::PathBuf;
 
 pub fn get_socket_path() -> PathBuf {
     if let Ok(runtime_dir) = std::env::var("XDG_RUNTIME_DIR") {
-        PathBuf::from(format!("{}/hadyx.sock", runtime_dir))
+        PathBuf::from(format!("{}/handyx.sock", runtime_dir))
     } else {
-        PathBuf::from("/tmp/hadyx.sock")
+        PathBuf::from("/tmp/handyx.sock")
     }
 }
 
 pub fn send_command(cmd: &str) -> Result<String, Box<dyn std::error::Error>> {
     let sock_path = get_socket_path();
     let mut stream = UnixStream::connect(sock_path)
-        .map_err(|e| format!("Could not connect to HadyX daemon (is 'hadyx daemon' running?): {}", e))?;
+        .map_err(|e| format!("Could not connect to HandyX daemon (is 'handyx daemon' running?): {}", e))?;
 
     writeln!(stream, "{}", cmd)?;
     stream.flush()?;
