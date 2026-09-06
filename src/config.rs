@@ -30,10 +30,11 @@ impl std::fmt::Display for EngineType {
 
 impl EngineType {
     pub fn from_str_loose(s: &str) -> Option<Self> {
-        match s.trim().to_lowercase().as_str() {
-            "groq" | "groq-turbo" | "whisper" | "groq_turbo" => Some(EngineType::GroqTurbo),
-            "moonshine-en" | "moonshine_en" | "moonshine-english" | "en" => Some(EngineType::MoonshineEn),
-            "moonshine-es" | "moonshine_es" | "moonshine-spanish" | "es" => Some(EngineType::MoonshineEs),
+        let clean = s.trim().to_lowercase().replace(['-', '_', ' '], "");
+        match clean.as_str() {
+            "groq" | "groqturbo" | "whisper" | "whisperturbo" => Some(EngineType::GroqTurbo),
+            "moonshineen" | "moonshineenglish" | "en" | "english" => Some(EngineType::MoonshineEn),
+            "moonshinees" | "moonshinespanish" | "es" | "spanish" | "español" => Some(EngineType::MoonshineEs),
             _ => None,
         }
     }
