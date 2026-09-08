@@ -4,6 +4,7 @@ mod engines;
 mod history;
 mod hud;
 mod ipc;
+mod media;
 mod paste;
 mod polish;
 mod shortcut;
@@ -17,6 +18,7 @@ use engines::moonshine::MoonshineEngine;
 use engines::TranscriptionEngine;
 use history::HistoryManager;
 use hud::{HudController, HudState};
+use media::MediaManager;
 use polish::OpenRouterPolisher;
 use std::fs;
 use std::io::{BufRead, BufReader, Write};
@@ -28,7 +30,7 @@ use tokio::sync::Mutex;
 
 #[derive(Parser)]
 #[command(name = "handyx")]
-#[command(about = "Minimalist, ultra-fast speech-to-text with Top Bar Tray Icon, Moonshine Base, Groq Whisper Turbo & OpenRouter AI Polish", long_about = None)]
+#[command(about = "Minimalist, ultra-fast speech-to-text with Top Bar Tray Icon, Moonshine Base, Groq Whisper Turbo, OpenRouter AI Polish & Media Auto-Pause", long_about = None)]
 struct Cli {
     #[command(subcommand)]
     command: Option<Commands>,
@@ -58,6 +60,13 @@ enum Commands {
     },
     /// Toggle AI polishing ON/OFF
     TogglePolish,
+    /// Toggle auto-pausing media (Spotify, Chrome, YouTube, VLC) while recording ON/OFF
+    ToggleMediaPause,
+    /// Enable or disable auto-pausing media while recording ('on', 'off', 'true', 'false')
+    SetMediaPause {
+        /// 'on', 'off', 'true', or 'false'
+        state: String,
+    },
     /// Set OpenRouter API key for AI polishing
     SetOpenrouterKey {
         /// OpenRouter API key
@@ -110,6 +119,8 @@ struct AppState {
     moonshine_en_engine: Arc<MoonshineEngine>,
     moonshine_es_engine: Arc<MoonshineEngine>,
     history_manager: Arc<HistoryManager>,
+    media_manager: Arc<MediaManager>,
+    paused_players: Arc<Mutex<Vec<String>>>,
     is_busy: Arc<AtomicBool>,
     recording_started_at: Arc<Mutex<Option<Instant>>>,
     tray_handle: Option<ksni::Handle<tray::HandyXTray>>,
@@ -117,6 +128,7 @@ struct AppState {
     tray_engine: Arc<std::sync::Mutex<String>>,
     tray_polish: Arc<std::sync::Mutex<bool>>,
     tray_mode: Arc<std::sync::Mutex<String>>,
+    tray_media_pause: Arc<std::sync::Mutex<bool>>,
 }
 
 impl AppState {
@@ -183,6 +195,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
         Commands::TogglePolish => {
             let res = ipc::send_command("TOGGLE_POLISH")?;
+            println!("{}", res);
+        }
+        Commands::ToggleMediaPause => {
+            let res = ipc::send_command("TOGGLE_MEDIA_PAUSE")?;
+            println!("{}", res);
+        }
+        Commands::SetMediaPause { state } => {
+            let res = ipc::send_command(&format!("SET_MEDIA_PAUSE {}", state))?;
             println!("{}", res);
         }
         Commands::SetOpenrouterKey { key } => {
@@ -354,6 +374,8 @@ async fn run_daemon() -> Result<(), Box<dyn std::error::Error>> {
     let moonshine_en_engine = Arc::new(MoonshineEngine::new("en".to_string()));
     let moonshine_es_engine = Arc::new(MoonshineEngine::new("es".to_string()));
     let history_manager = Arc::new(HistoryManager::new(cfg_guard.history_dir.as_deref()));
+    let media_manager = Arc::new(MediaManager::new().await);
+    let paused_players = Arc::new(Mutex::new(Vec::new()));
     let recorder = Arc::new(Mutex::new(AudioRecorder::new(cfg_guard.audio_sample_rate)));
 
     // Spawn Tray Icon
@@ -361,12 +383,14 @@ async fn run_daemon() -> Result<(), Box<dyn std::error::Error>> {
     let tray_eng = Arc::new(std::sync::Mutex::new(cfg_guard.engine.to_string()));
     let tray_pol = Arc::new(std::sync::Mutex::new(cfg_guard.enable_ai_polish));
     let tray_mod = Arc::new(std::sync::Mutex::new(cfg_guard.shortcut_mode.to_string()));
+    let tray_media = Arc::new(std::sync::Mutex::new(cfg_guard.pause_media_on_record));
 
     let tray_handle = match tray::spawn_tray(
         tray_rec.clone(),
         tray_eng.clone(),
         tray_pol.clone(),
         tray_mod.clone(),
+        tray_media.clone(),
     ).await {
         Ok(handle) => {
             println!("System tray icon registered successfully in top bar.");
@@ -392,6 +416,8 @@ async fn run_daemon() -> Result<(), Box<dyn std::error::Error>> {
         moonshine_en_engine,
         moonshine_es_engine,
         history_manager,
+        media_manager,
+        paused_players,
         is_busy: Arc::new(AtomicBool::new(false)),
         recording_started_at: Arc::new(Mutex::new(None)),
         tray_handle,
@@ -399,6 +425,7 @@ async fn run_daemon() -> Result<(), Box<dyn std::error::Error>> {
         tray_engine: tray_eng,
         tray_polish: tray_pol,
         tray_mode: tray_mod,
+        tray_media_pause: tray_media,
     });
 
     let listener = ipc::create_listener()?;
@@ -500,6 +527,7 @@ async fn handle_ipc_command(cmd: &str, state: &Arc<AppState>) -> String {
         *state.tray_engine.lock().unwrap() = cfg.engine.to_string();
         *state.tray_polish.lock().unwrap() = cfg.enable_ai_polish;
         *state.tray_mode.lock().unwrap() = cfg.shortcut_mode.to_string();
+        *state.tray_media_pause.lock().unwrap() = cfg.pause_media_on_record;
         state.update_tray();
         return "Config reloaded".to_string();
     }
@@ -513,6 +541,34 @@ async fn handle_ipc_command(cmd: &str, state: &Arc<AppState>) -> String {
         state.update_tray();
 
         return format!("AI Polish: {}", if cfg.enable_ai_polish { "ENABLED" } else { "DISABLED" });
+    }
+
+    if cmd == "TOGGLE_MEDIA_PAUSE" {
+        let mut cfg = state.config.lock().await;
+        cfg.pause_media_on_record = !cfg.pause_media_on_record;
+        let _ = cfg.save();
+
+        *state.tray_media_pause.lock().unwrap() = cfg.pause_media_on_record;
+        state.update_tray();
+
+        return format!("Media Auto-Pause: {}", if cfg.pause_media_on_record { "ENABLED" } else { "DISABLED" });
+    }
+
+    if cmd.starts_with("SET_MEDIA_PAUSE ") {
+        let arg = cmd.trim_start_matches("SET_MEDIA_PAUSE ").trim().to_lowercase();
+        let val = match arg.as_str() {
+            "true" | "1" | "on" | "enable" | "enabled" | "yes" | "si" => true,
+            "false" | "0" | "off" | "disable" | "disabled" | "no" => false,
+            _ => true,
+        };
+        let mut cfg = state.config.lock().await;
+        cfg.pause_media_on_record = val;
+        let _ = cfg.save();
+
+        *state.tray_media_pause.lock().unwrap() = cfg.pause_media_on_record;
+        state.update_tray();
+
+        return format!("Media Auto-Pause set to: {}", if val { "ENABLED" } else { "DISABLED" });
     }
 
     if cmd == "OPEN_HISTORY" {
@@ -558,11 +614,12 @@ async fn handle_ipc_command(cmd: &str, state: &Arc<AppState>) -> String {
             };
             let cfg = state.config.lock().await;
             format!(
-                "Active Model: {} | Mode: {} | Polish: {} ({}) | Recording: {}",
+                "Active Model: {} | Mode: {} | Polish: {} ({}) | Media Pause: {} | Recording: {}",
                 cfg.engine,
                 cfg.shortcut_mode,
                 if cfg.enable_ai_polish { "ON" } else { "OFF" },
                 cfg.openrouter_model,
+                if cfg.pause_media_on_record { "ON" } else { "OFF" },
                 is_rec
             )
         }
@@ -589,6 +646,21 @@ async fn start_recording(state: &Arc<AppState>) -> String {
 
             *state.tray_recording.lock().unwrap() = true;
             state.update_tray();
+
+            // Auto-pause playing media if enabled
+            let pause_media = {
+                let cfg = state.config.lock().await;
+                cfg.pause_media_on_record
+            };
+            if pause_media {
+                let media_mgr = state.media_manager.clone();
+                let paused_list = state.paused_players.clone();
+                tokio::spawn(async move {
+                    let paused = media_mgr.pause_active_players().await;
+                    let mut list = paused_list.lock().await;
+                    *list = paused;
+                });
+            }
 
             let engine_badge = {
                 let cfg = state.config.lock().await;
@@ -624,6 +696,21 @@ async fn stop_and_transcribe(state: &Arc<AppState>) -> String {
 
     *state.tray_recording.lock().unwrap() = false;
     state.update_tray();
+
+    // Auto-resume media that was paused by HandyX immediately
+    {
+        let media_mgr = state.media_manager.clone();
+        let paused_list = state.paused_players.clone();
+        tokio::spawn(async move {
+            let players = {
+                let mut list = paused_list.lock().await;
+                std::mem::take(&mut *list)
+            };
+            if !players.is_empty() {
+                media_mgr.resume_players(&players).await;
+            }
+        });
+    }
 
     let (wav_bytes, raw_samples) = {
         let mut rec = state.recorder.lock().await;

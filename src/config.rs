@@ -126,6 +126,10 @@ pub struct AppConfig {
     pub save_audio: bool,
     #[serde(default)]
     pub history_dir: Option<String>,
+
+    // Media pause (MPRIS D-Bus)
+    #[serde(default = "default_true")]
+    pub pause_media_on_record: bool,
 }
 
 fn default_groq_model() -> String { "whisper-large-v3-turbo".to_string() }
@@ -156,6 +160,8 @@ impl Default for AppConfig {
             save_history: true,
             save_audio: true,
             history_dir: None,
+
+            pause_media_on_record: true,
         }
     }
 }

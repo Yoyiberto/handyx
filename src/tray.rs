@@ -6,6 +6,7 @@ pub struct HandyXTray {
     pub active_engine: Arc<Mutex<String>>,
     pub is_polish_enabled: Arc<Mutex<bool>>,
     pub active_mode: Arc<Mutex<String>>,
+    pub is_media_pause_enabled: Arc<Mutex<bool>>,
 }
 
 impl Tray for HandyXTray {
@@ -56,6 +57,7 @@ impl Tray for HandyXTray {
         let current_engine = self.active_engine.lock().unwrap().clone();
         let polish_on = *self.is_polish_enabled.lock().unwrap();
         let current_mode = self.active_mode.lock().unwrap().clone();
+        let media_pause_on = *self.is_media_pause_enabled.lock().unwrap();
 
         vec![
             StandardItem {
@@ -119,6 +121,15 @@ impl Tray for HandyXTray {
                 checked: polish_on,
                 activate: Box::new(|_| {
                     let _ = crate::ipc::send_command("TOGGLE_POLISH");
+                }),
+                ..Default::default()
+            }
+            .into(),
+            CheckmarkItem {
+                label: "⏸ Pausar música al hablar (Auto-Pause)".into(),
+                checked: media_pause_on,
+                activate: Box::new(|_| {
+                    let _ = crate::ipc::send_command("TOGGLE_MEDIA_PAUSE");
                 }),
                 ..Default::default()
             }
@@ -201,6 +212,7 @@ pub async fn spawn_tray(
     active_engine: Arc<Mutex<String>>,
     is_polish_enabled: Arc<Mutex<bool>>,
     active_mode: Arc<Mutex<String>>,
+    is_media_pause_enabled: Arc<Mutex<bool>>,
 ) -> Result<Handle<HandyXTray>, ksni::Error> {
     use ksni::TrayMethods;
     let tray = HandyXTray {
@@ -208,6 +220,7 @@ pub async fn spawn_tray(
         active_engine,
         is_polish_enabled,
         active_mode,
+        is_media_pause_enabled,
     };
     tray.spawn().await
 }

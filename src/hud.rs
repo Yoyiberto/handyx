@@ -265,8 +265,9 @@ impl HudController {
                             badge.style_context().remove_class("hud-badge-polish");
                             badge.style_context().add_class("hud-badge");
 
-                            let preview = if text.len() > 28 {
-                                format!("{}...", &text[..28])
+                            let preview = if text.chars().count() > 28 {
+                                let truncated: String = text.chars().take(28).collect();
+                                format!("{}...", truncated)
                             } else if text.is_empty() {
                                 "Texto pegado".to_string()
                             } else {

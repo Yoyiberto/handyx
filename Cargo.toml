@@ -24,5 +24,6 @@ base64 = "0.22"
 enigo = { version = "0.2", default-features = false, features = ["x11rb"] }
 chrono = { version = "0.4", features = ["serde"] }
 ksni = "0.3.6"
+zbus = "5"
 log = "0.4"
 env_logger = "0.11"
