@@ -1146,6 +1146,7 @@ dependencies = [
  "gtk",
  "hound",
  "ksni",
+ "libc",
  "log",
  "reqwest",
  "serde",

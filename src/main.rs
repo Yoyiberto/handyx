@@ -39,7 +39,15 @@ struct Cli {
 #[derive(Subcommand)]
 enum Commands {
     /// Start the background daemon with top bar Tray icon and floating HUD
-    Daemon,
+    Daemon {
+        /// Run detached in the background without keeping the terminal open
+        #[arg(short, long)]
+        detach: bool,
+    },
+    /// Restart the background daemon in the background without keeping a terminal open
+    Restart,
+    /// Stop the running background daemon cleanly
+    StopDaemon,
     /// Toggle recording (start/stop) - default for global shortcut
     Toggle,
     /// Key-down trigger for Push-to-Talk (Hold mode)
@@ -147,9 +155,30 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     env_logger::init();
     let cli = Cli::parse();
 
-    match cli.command.unwrap_or(Commands::Daemon) {
-        Commands::Daemon => {
-            run_daemon().await?;
+    match cli.command.unwrap_or(Commands::Daemon { detach: false }) {
+        Commands::Daemon { detach } => {
+            if detach {
+                start_detached_daemon()?;
+            } else {
+                run_daemon().await?;
+            }
+        }
+        Commands::Restart => {
+            let _ = std::process::Command::new("pkill").args(["-f", "handyx daemon"]).status();
+            tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+            let sock = ipc::get_socket_path();
+            if sock.exists() {
+                let _ = fs::remove_file(&sock);
+            }
+            start_detached_daemon()?;
+        }
+        Commands::StopDaemon => {
+            if let Ok(res) = ipc::send_command("QUIT") {
+                println!("HandyX daemon stopped: {}", res);
+            } else {
+                let _ = std::process::Command::new("pkill").args(["-f", "handyx daemon"]).status();
+                println!("HandyX daemon stopped.");
+            }
         }
         Commands::Toggle => {
             let res = ipc::send_command("TOGGLE")?;
@@ -289,6 +318,23 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     }
 
+    Ok(())
+}
+
+fn start_detached_daemon() -> Result<(), Box<dyn std::error::Error>> {
+    let handyx_bin = std::env::current_exe()
+        .unwrap_or_else(|_| PathBuf::from("/home/jmendez/.local/bin/handyx"));
+    let bin_str = handyx_bin.to_string_lossy();
+
+    let cmd_str = format!("setsid {} daemon > /tmp/handyx.log 2>&1 &", bin_str);
+    std::process::Command::new("sh")
+        .arg("-c")
+        .arg(&cmd_str)
+        .spawn()?
+        .wait()?;
+
+    println!("HandyX daemon started in background.");
+    println!("Icon is active in the top bar. You can safely close this terminal.");
     Ok(())
 }
 
