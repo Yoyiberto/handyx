@@ -107,6 +107,13 @@ enum Commands {
         /// Keybinding expression (e.g. '<Control><Shift>space' or '<Control>space')
         binding: String,
     },
+    /// Trigger word/sentence correction on currently selected text (default shortcut: '<Control><Alt>space')
+    Correct,
+    /// Set and register GNOME global correction shortcut (e.g. '<Control><Alt>space')
+    SetCorrectionShortcut {
+        /// Keybinding expression (e.g. '<Control><Alt>space')
+        binding: String,
+    },
     /// Set Groq API key
     SetKey {
         /// Groq API key
@@ -304,6 +311,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             shortcut::register_gnome_shortcut(&binding)?;
             println!("Global shortcut updated to '{}'", binding);
         }
+        Commands::Correct => {
+            let res = ipc::send_command("CORRECT")?;
+            println!("{}", res);
+        }
+        Commands::SetCorrectionShortcut { binding } => {
+            let mut cfg = AppConfig::load();
+            cfg.correction_shortcut = binding.clone();
+            cfg.save()?;
+            shortcut::register_gnome_correction_shortcut(&binding)?;
+            println!("Global correction shortcut updated to '{}'", binding);
+        }
         Commands::SetKey { key } => {
             let mut cfg = AppConfig::load();
             cfg.groq_api_key = key;
@@ -410,7 +428,7 @@ async fn run_daemon() -> Result<(), Box<dyn std::error::Error>> {
     println!("History Saving: {}", if cfg_guard.save_history { "ENABLED" } else { "DISABLED" });
     println!("Config Path: {:?}", AppConfig::config_path());
 
-    let _ = shortcut::register_gnome_shortcut(&cfg_guard.shortcut);
+    let _ = shortcut::register_all_gnome_shortcuts(&cfg_guard.shortcut, &cfg_guard.correction_shortcut);
     let _ = setup_autostart(true);
 
     let groq_engine = Arc::new(GroqEngine::new(
@@ -660,14 +678,25 @@ async fn handle_ipc_command(cmd: &str, state: &Arc<AppState>) -> String {
             };
             let cfg = state.config.lock().await;
             format!(
-                "Active Model: {} | Mode: {} | Polish: {} ({}) | Media Pause: {} | Recording: {}",
+                "Active Model: {} | Mode: {} | Dictation Shortcut: {} | Correction Shortcut: {} | Polish: {} ({}) | Media Pause: {} | Recording: {}",
                 cfg.engine,
                 cfg.shortcut_mode,
+                cfg.shortcut,
+                cfg.correction_shortcut,
                 if cfg.enable_ai_polish { "ON" } else { "OFF" },
                 cfg.openrouter_model,
                 if cfg.pause_media_on_record { "ON" } else { "OFF" },
                 is_rec
             )
+        }
+        "CORRECT" => {
+            let selected = paste::get_primary_selection();
+            println!("Correction invoked on selected text: '{}'", selected);
+            if selected.is_empty() {
+                "CORRECT: (No text currently selected)".to_string()
+            } else {
+                format!("CORRECT: Selected '{}'", selected)
+            }
         }
         _ => "UNKNOWN_COMMAND".to_string(),
     }

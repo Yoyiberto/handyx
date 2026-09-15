@@ -130,10 +130,15 @@ pub struct AppConfig {
     // Media pause (MPRIS D-Bus)
     #[serde(default = "default_true")]
     pub pause_media_on_record: bool,
+
+    // Vocabulary correction shortcut
+    #[serde(default = "default_correction_shortcut")]
+    pub correction_shortcut: String,
 }
 
 fn default_groq_model() -> String { "whisper-large-v3-turbo".to_string() }
 fn default_shortcut() -> String { "<Control><Shift>space".to_string() }
+fn default_correction_shortcut() -> String { "<Control><Alt>space".to_string() }
 fn default_paste_method() -> String { "auto".to_string() }
 fn default_sample_rate() -> u32 { 16000 }
 fn default_paste_delay() -> u64 { 60 }
@@ -147,6 +152,7 @@ impl Default for AppConfig {
             groq_api_key: String::new(),
             groq_model: default_groq_model(),
             shortcut: default_shortcut(),
+            correction_shortcut: default_correction_shortcut(),
             shortcut_mode: ShortcutMode::Hybrid,
             paste_method: default_paste_method(),
             audio_sample_rate: default_sample_rate(),

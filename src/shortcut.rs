@@ -3,13 +3,48 @@ use std::process::Command;
 const HANDYX_KEYBINDING_PATH: &str = "/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/handyx/";
 const HANDYX_SCHEMA: &str = "org.gnome.settings-daemon.plugins.media-keys.custom-keybinding:/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/handyx/";
 
+const HANDYX_CORRECT_PATH: &str = "/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/handyx-correct/";
+const HANDYX_CORRECT_SCHEMA: &str = "org.gnome.settings-daemon.plugins.media-keys.custom-keybinding:/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/handyx-correct/";
+
 pub fn register_gnome_shortcut(binding: &str) -> Result<(), Box<dyn std::error::Error>> {
+    register_custom_binding(
+        HANDYX_KEYBINDING_PATH,
+        HANDYX_SCHEMA,
+        "HandyX Toggle",
+        "toggle",
+        binding,
+    )
+}
+
+pub fn register_gnome_correction_shortcut(binding: &str) -> Result<(), Box<dyn std::error::Error>> {
+    register_custom_binding(
+        HANDYX_CORRECT_PATH,
+        HANDYX_CORRECT_SCHEMA,
+        "HandyX Correct",
+        "correct",
+        binding,
+    )
+}
+
+pub fn register_all_gnome_shortcuts(dictation: &str, correction: &str) -> Result<(), Box<dyn std::error::Error>> {
+    register_gnome_shortcut(dictation)?;
+    register_gnome_correction_shortcut(correction)?;
+    Ok(())
+}
+
+fn register_custom_binding(
+    path: &str,
+    schema: &str,
+    name: &str,
+    subcmd: &str,
+    binding: &str,
+) -> Result<(), Box<dyn std::error::Error>> {
     let handyx_bin = std::env::current_exe()
         .unwrap_or_else(|_| std::path::PathBuf::from("handyx"))
         .to_string_lossy()
         .to_string();
 
-    let trigger_cmd = format!("{} toggle", handyx_bin);
+    let trigger_cmd = format!("{} {}", handyx_bin, subcmd);
 
     // 1. Get current custom keybinding list
     let output = Command::new("gsettings")
@@ -28,8 +63,8 @@ pub fn register_gnome_shortcut(binding: &str) -> Result<(), Box<dyn std::error::
         Vec::new()
     };
 
-    if !paths.contains(&HANDYX_KEYBINDING_PATH.to_string()) {
-        paths.push(HANDYX_KEYBINDING_PATH.to_string());
+    if !paths.contains(&path.to_string()) {
+        paths.push(path.to_string());
     }
 
     let formatted_list = format!(
@@ -53,15 +88,15 @@ pub fn register_gnome_shortcut(binding: &str) -> Result<(), Box<dyn std::error::
 
     // 3. Set name, command, binding
     Command::new("gsettings")
-        .args(["set", HANDYX_SCHEMA, "name", "'HandyX Toggle'"])
+        .args(["set", schema, "name", &format!("'{}'", name)])
         .status()?;
 
     Command::new("gsettings")
-        .args(["set", HANDYX_SCHEMA, "command", &format!("'{}'", trigger_cmd)])
+        .args(["set", schema, "command", &format!("'{}'", trigger_cmd)])
         .status()?;
 
     Command::new("gsettings")
-        .args(["set", HANDYX_SCHEMA, "binding", &format!("'{}'", binding)])
+        .args(["set", schema, "binding", &format!("'{}'", binding)])
         .status()?;
 
     println!("Registered GNOME global shortcut: {} -> {}", binding, trigger_cmd);

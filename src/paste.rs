@@ -212,3 +212,41 @@ pub fn paste_text(text: &str, delay_ms: u64) -> Result<(), Box<dyn std::error::E
     simulate_paste(delay_ms)?;
     Ok(())
 }
+
+/// Reads the currently selected/highlighted text from the X11/Wayland primary selection buffer (e.g. from a double-click)
+pub fn get_primary_selection() -> String {
+    // 1. Try xclip (primary selection)
+    if let Ok(out) = Command::new("xclip")
+        .args(["-o", "-selection", "primary"])
+        .output()
+    {
+        if out.status.success() {
+            let s = String::from_utf8_lossy(&out.stdout).trim().to_string();
+            if !s.is_empty() {
+                return s;
+            }
+        }
+    }
+
+    // 2. Try xsel (primary selection)
+    if let Ok(out) = Command::new("xsel").args(["-p", "-o"]).output() {
+        if out.status.success() {
+            let s = String::from_utf8_lossy(&out.stdout).trim().to_string();
+            if !s.is_empty() {
+                return s;
+            }
+        }
+    }
+
+    // 3. Try wl-paste (Wayland primary)
+    if let Ok(out) = Command::new("wl-paste").arg("--primary").output() {
+        if out.status.success() {
+            let s = String::from_utf8_lossy(&out.stdout).trim().to_string();
+            if !s.is_empty() {
+                return s;
+            }
+        }
+    }
+
+    String::new()
+}
