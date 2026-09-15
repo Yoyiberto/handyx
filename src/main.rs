@@ -9,6 +9,7 @@ mod paste;
 mod polish;
 mod shortcut;
 mod tray;
+mod vocabulary;
 
 use audio::AudioRecorder;
 use clap::{Parser, Subcommand};
@@ -20,6 +21,7 @@ use history::HistoryManager;
 use hud::{HudController, HudState};
 use media::MediaManager;
 use polish::OpenRouterPolisher;
+use vocabulary::VocabularyManager;
 use std::fs;
 use std::io::{BufRead, BufReader, Write};
 use std::path::PathBuf;
@@ -114,6 +116,10 @@ enum Commands {
         /// Keybinding expression (e.g. '<Control><Alt>space')
         binding: String,
     },
+    /// View learned vocabulary corrections
+    Vocabulary,
+    /// Clear all learned vocabulary corrections
+    ClearVocabulary,
     /// Set Groq API key
     SetKey {
         /// Groq API key
@@ -134,6 +140,7 @@ struct AppState {
     moonshine_en_engine: Arc<MoonshineEngine>,
     moonshine_es_engine: Arc<MoonshineEngine>,
     history_manager: Arc<HistoryManager>,
+    vocab_manager: Arc<VocabularyManager>,
     media_manager: Arc<MediaManager>,
     paused_players: Arc<Mutex<Vec<String>>>,
     is_busy: Arc<AtomicBool>,
@@ -312,8 +319,55 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             println!("Global shortcut updated to '{}'", binding);
         }
         Commands::Correct => {
-            let res = ipc::send_command("CORRECT")?;
-            println!("{}", res);
+            // 1. Get currently selected text from primary buffer
+            let selected = paste::get_primary_selection();
+            let original = selected.trim();
+            if original.is_empty() {
+                let _ = ipc::send_command("HUD_ERROR ⚠️ Selecciona una palabra primero");
+                eprintln!("HandyX Correct: No text selected. Double-click a word first.");
+                return Ok(());
+            }
+
+            println!("Invoking correction for selected text: '{}'", original);
+            let _ = ipc::send_command(&format!("HUD_INFO ✏️ Corregir: {}", original));
+
+            // 2. Open Zenity text entry dialog
+            let zenity_res = std::process::Command::new("zenity")
+                .arg("--entry")
+                .arg("--title=HandyX • Corrección de Vocabulario")
+                .arg(&format!("--text=Palabra original seleccionada:\n<b>{}</b>\n\nEscribe la corrección (HandyX la aprenderá):", original))
+                .arg(&format!("--entry-text={}", original))
+                .arg("--width=420")
+                .output();
+
+            match zenity_res {
+                Ok(out) if out.status.success() => {
+                    let corrected = String::from_utf8_lossy(&out.stdout).trim().to_string();
+                    if !corrected.is_empty() && !corrected.eq_ignore_ascii_case(original) {
+                        // Persist to vocabulary storage immediately
+                        let vm = VocabularyManager::new();
+                        let _ = vm.learn(original, &corrected);
+
+                        // Sleep briefly to let window manager refocus target application
+                        tokio::time::sleep(Duration::from_millis(150)).await;
+
+                        // Replace selected word in active application
+                        if let Err(e) = paste::paste_text(&corrected, 40) {
+                            eprintln!("Warning: Failed to paste correction: {}", e);
+                        }
+
+                        // Inform daemon to reload & show HUD confirmation
+                        let _ = ipc::send_command(&format!("LEARN_VOCAB {}:::{}", original, corrected));
+                        let _ = ipc::send_command(&format!("HUD_SUCCESS ✓ Aprendido: {} ➔ {}", original, corrected));
+                        println!("Correction applied and learned: '{}' -> '{}'", original, corrected);
+                    } else {
+                        let _ = ipc::send_command("HUD_HIDE");
+                    }
+                }
+                _ => {
+                    let _ = ipc::send_command("HUD_HIDE");
+                }
+            }
         }
         Commands::SetCorrectionShortcut { binding } => {
             let mut cfg = AppConfig::load();
@@ -321,6 +375,25 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             cfg.save()?;
             shortcut::register_gnome_correction_shortcut(&binding)?;
             println!("Global correction shortcut updated to '{}'", binding);
+        }
+        Commands::Vocabulary => {
+            let vm = VocabularyManager::new();
+            let items = vm.list_items();
+            if items.is_empty() {
+                println!("No custom vocabulary corrections learned yet.");
+                println!("To correct a word: double-click to select it and press {}", AppConfig::load().correction_shortcut);
+            } else {
+                println!("=== HandyX Learned Vocabulary ({}) ===", items.len());
+                for item in items {
+                    println!("  '{}'  ➔  '{}'  ({})", item.original, item.corrected, item.timestamp);
+                }
+            }
+        }
+        Commands::ClearVocabulary => {
+            let vm = VocabularyManager::new();
+            vm.clear()?;
+            let _ = ipc::send_command("RELOAD_CONFIG");
+            println!("All learned vocabulary corrections have been cleared.");
         }
         Commands::SetKey { key } => {
             let mut cfg = AppConfig::load();
@@ -438,6 +511,7 @@ async fn run_daemon() -> Result<(), Box<dyn std::error::Error>> {
     let moonshine_en_engine = Arc::new(MoonshineEngine::new("en".to_string()));
     let moonshine_es_engine = Arc::new(MoonshineEngine::new("es".to_string()));
     let history_manager = Arc::new(HistoryManager::new(cfg_guard.history_dir.as_deref()));
+    let vocab_manager = Arc::new(VocabularyManager::new());
     let media_manager = Arc::new(MediaManager::new().await);
     let paused_players = Arc::new(Mutex::new(Vec::new()));
     let recorder = Arc::new(Mutex::new(AudioRecorder::new(cfg_guard.audio_sample_rate)));
@@ -480,6 +554,7 @@ async fn run_daemon() -> Result<(), Box<dyn std::error::Error>> {
         moonshine_en_engine,
         moonshine_es_engine,
         history_manager,
+        vocab_manager,
         media_manager,
         paused_players,
         is_busy: Arc::new(AtomicBool::new(false)),
@@ -645,6 +720,48 @@ async fn handle_ipc_command(cmd: &str, state: &Arc<AppState>) -> String {
         let path = AppConfig::config_path();
         let _ = std::process::Command::new("xdg-open").arg(path).spawn();
         return "Opening config file".to_string();
+    }
+
+    if cmd.starts_with("LEARN_VOCAB ") {
+        let pair = cmd.trim_start_matches("LEARN_VOCAB ").trim();
+        if let Some((orig, corr)) = pair.split_once(":::") {
+            let _ = state.vocab_manager.learn(orig, corr);
+            println!("IPC: Learned vocabulary '{}' -> '{}'", orig, corr);
+            return format!("LEARNED: {} -> {}", orig, corr);
+        }
+    }
+
+    if cmd.starts_with("HUD_ERROR ") {
+        let msg = cmd.trim_start_matches("HUD_ERROR ").trim();
+        state.hud.set_state(HudState::Error { message: msg.to_string() });
+        let hud = state.hud.clone();
+        tokio::spawn(async move {
+            tokio::time::sleep(Duration::from_millis(2500)).await;
+            hud.set_state(HudState::Hidden);
+        });
+        return "OK".to_string();
+    }
+
+    if cmd.starts_with("HUD_SUCCESS ") {
+        let msg = cmd.trim_start_matches("HUD_SUCCESS ").trim();
+        state.hud.set_state(HudState::Success { text: msg.to_string() });
+        let hud = state.hud.clone();
+        tokio::spawn(async move {
+            tokio::time::sleep(Duration::from_millis(2500)).await;
+            hud.set_state(HudState::Hidden);
+        });
+        return "OK".to_string();
+    }
+
+    if cmd.starts_with("HUD_INFO ") {
+        let msg = cmd.trim_start_matches("HUD_INFO ").trim();
+        state.hud.set_state(HudState::Transcribing { engine_name: msg.to_string() });
+        return "OK".to_string();
+    }
+
+    if cmd == "HUD_HIDE" {
+        state.hud.set_state(HudState::Hidden);
+        return "OK".to_string();
     }
 
     match cmd {
@@ -881,6 +998,9 @@ async fn stop_and_transcribe(state: &Arc<AppState>) -> String {
                     }
                 }
             }
+
+            // Apply learned vocabulary corrections automatically
+            final_text = state.vocab_manager.apply(&final_text);
 
             if save_hist {
                 let engine_name = format!("{:?}", engine_type);
