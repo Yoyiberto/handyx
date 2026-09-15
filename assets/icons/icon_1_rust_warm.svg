@@ -1,0 +1,59 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="100%" height="100%">
+  <defs>
+    <!-- Soft shadow -->
+    <filter id="dropShadow" x="-10%" y="-5%" width="120%" height="125%" filterUnits="userSpaceOnUse">
+      <feDropShadow dx="0" dy="10" stdDeviation="12" flood-color="#000000" flood-opacity="0.18" />
+    </filter>
+    <filter id="softGlow" x="-5%" y="-5%" width="110%" height="110%" filterUnits="userSpaceOnUse">
+      <feDropShadow dx="0" dy="4" stdDeviation="6" flood-color="#78350F" flood-opacity="0.15" />
+    </filter>
+
+    <!-- Rust Warm Gradient -->
+    <linearGradient id="rustMainGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#EA580C" />
+      <stop offset="50%" stop-color="#D94E08" />
+      <stop offset="100%" stop-color="#C2410C" />
+    </linearGradient>
+
+    <!-- Ring Gradient -->
+    <linearGradient id="rustRingGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#9A3412" />
+      <stop offset="100%" stop-color="#7C2D12" />
+    </linearGradient>
+  </defs>
+
+  <!-- Layer 3: Bottom backing board (warm leather/kraft cardboard) -->
+  <rect x="56" y="80" width="400" height="400" rx="44" fill="#6B2D0E" />
+
+  <!-- Layer 2: Middle paper sheets -->
+  <rect x="56" y="70" width="400" height="390" rx="44" fill="#F8FAFC" opacity="0.9" />
+  <rect x="56" y="60" width="400" height="390" rx="44" fill="#FFFFFF" filter="url(#dropShadow)" />
+
+  <!-- Layer 1: Front cover sheet (Rust warm orange) -->
+  <rect x="56" y="50" width="400" height="375" rx="44" fill="url(#rustMainGrad)" />
+
+  <!-- Inner highlight curve on top page -->
+  <path d="M 100 52 L 412 52 A 44 44 0 0 1 454 94 L 454 96 A 44 44 0 0 0 412 54 L 100 54 A 44 44 0 0 0 58 96 L 58 94 A 44 44 0 0 1 100 52 Z" fill="#FFFFFF" opacity="0.25" />
+
+  <!-- 3 Text Lines (Rounded bars) -->
+  <rect x="126" y="155" width="260" height="34" rx="17" fill="#882C09" opacity="0.9" />
+  <rect x="126" y="240" width="260" height="34" rx="17" fill="#882C09" opacity="0.9" />
+  <rect x="126" y="325" width="260" height="34" rx="17" fill="#882C09" opacity="0.9" />
+
+  <!-- 4 Spiral Ring Loops at top -->
+  <!-- Ring 1 -->
+  <rect x="100" y="22" width="44" height="66" rx="22" fill="url(#rustRingGrad)" filter="url(#softGlow)" />
+  <rect x="110" y="30" width="12" height="42" rx="6" fill="#FFFFFF" opacity="0.35" />
+
+  <!-- Ring 2 -->
+  <rect x="184" y="22" width="44" height="66" rx="22" fill="url(#rustRingGrad)" filter="url(#softGlow)" />
+  <rect x="194" y="30" width="12" height="42" rx="6" fill="#FFFFFF" opacity="0.35" />
+
+  <!-- Ring 3 -->
+  <rect x="284" y="22" width="44" height="66" rx="22" fill="url(#rustRingGrad)" filter="url(#softGlow)" />
+  <rect x="294" y="30" width="12" height="42" rx="6" fill="#FFFFFF" opacity="0.35" />
+
+  <!-- Ring 4 -->
+  <rect x="368" y="22" width="44" height="66" rx="22" fill="url(#rustRingGrad)" filter="url(#softGlow)" />
+  <rect x="378" y="30" width="12" height="42" rx="6" fill="#FFFFFF" opacity="0.35" />
+</svg>

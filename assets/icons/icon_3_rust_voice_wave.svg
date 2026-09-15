@@ -1,0 +1,73 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="100%" height="100%">
+  <defs>
+    <!-- Soft shadow -->
+    <filter id="dropShadowV" x="-10%" y="-5%" width="120%" height="125%" filterUnits="userSpaceOnUse">
+      <feDropShadow dx="0" dy="10" stdDeviation="12" flood-color="#000000" flood-opacity="0.18" />
+    </filter>
+    <filter id="softGlowV" x="-5%" y="-5%" width="110%" height="110%" filterUnits="userSpaceOnUse">
+      <feDropShadow dx="0" dy="4" stdDeviation="6" flood-color="#7C2D12" flood-opacity="0.2" />
+    </filter>
+
+    <!-- Warm Burnt Copper / Rust Gradient -->
+    <linearGradient id="rustCopperGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#F97316" />
+      <stop offset="40%" stop-color="#EA580C" />
+      <stop offset="100%" stop-color="#C2410C" />
+    </linearGradient>
+
+    <!-- Ring Gradient -->
+    <linearGradient id="ringCopperGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#9A3412" />
+      <stop offset="100%" stop-color="#431407" />
+    </linearGradient>
+  </defs>
+
+  <!-- Layer 3: Bottom backing board (Deep Mahogany) -->
+  <rect x="56" y="80" width="400" height="400" rx="44" fill="#431407" />
+
+  <!-- Layer 2: Middle paper sheets -->
+  <rect x="56" y="70" width="400" height="390" rx="44" fill="#FFF7ED" opacity="0.95" />
+  <rect x="56" y="60" width="400" height="390" rx="44" fill="#FFFFFF" filter="url(#dropShadowV)" />
+
+  <!-- Layer 1: Front cover sheet (Rust Burnt Orange) -->
+  <rect x="56" y="50" width="400" height="375" rx="44" fill="url(#rustCopperGrad)" />
+
+  <!-- Inner highlight curve on top page -->
+  <path d="M 100 52 L 412 52 A 44 44 0 0 1 454 94 L 454 96 A 44 44 0 0 0 412 54 L 100 54 A 44 44 0 0 0 58 96 L 58 94 A 44 44 0 0 1 100 52 Z" fill="#FFFFFF" opacity="0.3" />
+
+  <!-- Line 1: Top text bar -->
+  <rect x="126" y="150" width="260" height="32" rx="16" fill="#7C2D12" opacity="0.9" />
+
+  <!-- Line 2: Sound / Voice Waveform (Speech-to-Text dynamic indicator) -->
+  <g fill="#7C2D12" opacity="0.95">
+    <rect x="126" y="243" width="16" height="26" rx="8" />
+    <rect x="156" y="233" width="16" height="46" rx="8" />
+    <rect x="186" y="220" width="16" height="72" rx="8" />
+    <rect x="216" y="210" width="16" height="92" rx="8" />
+    <rect x="248" y="200" width="16" height="112" rx="8" fill="#5A1A05" />
+    <rect x="280" y="210" width="16" height="92" rx="8" />
+    <rect x="310" y="220" width="16" height="72" rx="8" />
+    <rect x="340" y="233" width="16" height="46" rx="8" />
+    <rect x="370" y="243" width="16" height="26" rx="8" />
+  </g>
+
+  <!-- Line 3: Bottom text bar -->
+  <rect x="126" y="340" width="260" height="32" rx="16" fill="#7C2D12" opacity="0.9" />
+
+  <!-- 4 Spiral Ring Loops at top -->
+  <!-- Ring 1 -->
+  <rect x="100" y="22" width="44" height="66" rx="22" fill="url(#ringCopperGrad)" filter="url(#softGlowV)" />
+  <rect x="110" y="30" width="12" height="42" rx="6" fill="#FFFFFF" opacity="0.35" />
+
+  <!-- Ring 2 -->
+  <rect x="184" y="22" width="44" height="66" rx="22" fill="url(#ringCopperGrad)" filter="url(#softGlowV)" />
+  <rect x="194" y="30" width="12" height="42" rx="6" fill="#FFFFFF" opacity="0.35" />
+
+  <!-- Ring 3 -->
+  <rect x="284" y="22" width="44" height="66" rx="22" fill="url(#ringCopperGrad)" filter="url(#softGlowV)" />
+  <rect x="294" y="30" width="12" height="42" rx="6" fill="#FFFFFF" opacity="0.35" />
+
+  <!-- Ring 4 -->
+  <rect x="368" y="22" width="44" height="66" rx="22" fill="url(#ringCopperGrad)" filter="url(#softGlowV)" />
+  <rect x="378" y="30" width="12" height="42" rx="6" fill="#FFFFFF" opacity="0.35" />
+</svg>
